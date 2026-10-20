@@ -31,4 +31,4 @@ EXPOSE 8080
 ENV PORT=8080
 ENV SPRING_PROFILES_ACTIVE=prod
 
-ENTRYPOINT ["sh", "-c", "exec java ${JAVA_OPTS:-XX:+UseG1GC -XX:MaxRAMPercentage=75.0} -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java ${JAVA_OPTS:--XX:+UseG1GC -XX:MaxRAMPercentage=75.0} -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
