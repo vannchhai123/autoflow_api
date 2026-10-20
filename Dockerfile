@@ -30,5 +30,6 @@ RUN mkdir -p storage/videos storage/audio storage/thumbnails storage/cloned_voic
 EXPOSE 8080
 ENV PORT=8080
 ENV SPRING_PROFILES_ACTIVE=prod
+ENV JAVA_TOOL_OPTIONS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
 
-ENTRYPOINT ["sh", "-c", "exec java ${JAVA_OPTS:--XX:+UseG1GC -XX:MaxRAMPercentage=75.0} -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
