@@ -1,0 +1,32 @@
+# Build outputs
+target/
+*.jar
+
+# IDE & Editor files
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# Local environment & secrets
+.env
+.env.*
+.env.local
+storage/oauth_credentials.json
+
+# Local storage media files
+storage/videos/*
+storage/audio/*
+storage/thumbnails/*
+storage/cloned_voices/*
+
+# Python caches
+scripts/__pycache__/
+*.pyc
+
+# Git & OS metadata
+.git/
+.gitignore
+.DS_Store
+Thumbs.db

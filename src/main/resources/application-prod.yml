@@ -1,0 +1,111 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+  forward-headers-strategy: framework
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 2048
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:${DATABASE_URL:${DB_URL:jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:auto_clip}?sslmode=${PGSSLMODE:require}}}}
+    username: ${SPRING_DATASOURCE_USERNAME:${PGUSER:${DB_USERNAME:postgres}}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${PGPASSWORD:${DB_PASSWORD:}}}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: AutoClipHikariPool
+      maximum-pool-size: ${DB_POOL_MAX:8}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      idle-timeout: 60000
+      max-lifetime: 600000
+      keepalive-time: 30000
+      connection-timeout: 30000
+      validation-timeout: 5000
+      leak-detection-threshold: 60000
+  jpa:
+    open-in-view: false
+    show-sql: false
+    generate-ddl: false
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        format_sql: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 25
+          order_inserts: true
+          order_updates: true
+          time_zone: UTC
+  sql:
+    init:
+      mode: never
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE:50MB}
+      max-request-size: ${MAX_REQUEST_SIZE:50MB}
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION_MS:86400000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+
+autoclip:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
+  admin:
+    email: ${ADMIN_EMAIL:admin@autoclip.app}
+    password: ${ADMIN_PASSWORD:}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://autoflow-app-phi.vercel.app,http://localhost:3000}
+  storage:
+    base-url: ${STORAGE_BASE_URL:${APP_BASE_URL:${RENDER_EXTERNAL_URL:}}}
+    bucket: ${S3_BUCKET:autoclip-assets}
+    region: ${S3_REGION:us-east-1}
+  async:
+    core-pool-size: ${ASYNC_CORE_POOL:4}
+    max-pool-size: ${ASYNC_MAX_POOL:16}
+    queue-capacity: ${ASYNC_QUEUE_CAPACITY:200}
+  scheduler:
+    publish-cron: ${SCHEDULER_CRON:0 * * * * *}
+    batch-size: ${SCHEDULER_BATCH_SIZE:50}
+
+clipflow:
+  oauth:
+    google:
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
+      redirect-uri: ${GOOGLE_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:http://localhost:8080}}/api/accounts/oauth2/callback/youtube}
+      frontend-redirect: ${FRONTEND_REDIRECT:${FRONTEND_URL:https://autoflow-app-phi.vercel.app}/settings/accounts}
+    tiktok:
+      client-key: ${TIKTOK_CLIENT_KEY:}
+      client-secret: ${TIKTOK_CLIENT_SECRET:}
+      redirect-uri: ${TIKTOK_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:http://localhost:8080}}/api/accounts/oauth2/callback/tiktok}
+      frontend-redirect: ${FRONTEND_REDIRECT:${FRONTEND_URL:https://autoflow-app-phi.vercel.app}/settings/accounts}
+    facebook:
+      app-id: ${FACEBOOK_APP_ID:}
+      app-secret: ${FACEBOOK_APP_SECRET:}
+      redirect-uri: ${FACEBOOK_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:http://localhost:8080}}/api/accounts/oauth2/callback/facebook}
+      scope: ${FACEBOOK_SCOPE:public_profile}
+      frontend-redirect: ${FRONTEND_REDIRECT:${FRONTEND_URL:https://autoflow-app-phi.vercel.app}/settings/accounts}
+
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:WARN}
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.apache.tomcat: WARN
+    com.autoclip: INFO
+
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}

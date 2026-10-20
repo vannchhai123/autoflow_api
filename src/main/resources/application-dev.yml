@@ -1,0 +1,103 @@
+server:
+  port: ${PORT:8090}
+
+spring:
+  config:
+    activate:
+      on-profile: dev
+    import:
+      - "optional:file:./.env[.properties]"
+      - "optional:file:../.env[.properties]"
+
+  datasource:
+    url: ${DB_URL:${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/auto_clip}}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: AutoClipDevPool
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000
+
+  jpa:
+    open-in-view: true
+    show-sql: true
+    generate-ddl: true
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  sql:
+    init:
+      mode: never
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+jwt:
+  secret: ${JWT_SECRET:ZGV2LW9ubHktc2VjcmV0LWtleS1jaGFuZ2UtbWUtaW4tcHJvZHVjdGlvbi0xMjM0NTY3ODkw}
+  expiration: 86400000
+  refresh-expiration: 604800000
+
+autoclip:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:ZGV2LW9ubHktc2VjcmV0LWtleS1jaGFuZ2UtbWUtaW4tcHJvZHVjdGlvbi0xMjM0NTY3ODkw}
+      expiration-minutes: 1440
+  admin:
+    email: ${ADMIN_EMAIL:dev@autoclip.app}
+    password: ${ADMIN_PASSWORD:AutoClipDev123!}
+  cors:
+    allowed-origins: "http://localhost:3000,http://127.0.0.1:3000,*"
+  storage:
+    base-url: ${STORAGE_BASE_URL:http://localhost:8090}
+    bucket: ${S3_BUCKET:autoclip-assets-dev}
+    region: ${S3_REGION:us-east-1}
+  async:
+    core-pool-size: 2
+    max-pool-size: 8
+    queue-capacity: 50
+  scheduler:
+    publish-cron: "0 * * * * *"
+    batch-size: 10
+
+clipflow:
+  oauth:
+    google:
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
+      redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8090/api/accounts/oauth2/callback/youtube}
+      frontend-redirect: ${FRONTEND_REDIRECT:http://localhost:3000/settings/accounts}
+    tiktok:
+      client-key: ${TIKTOK_CLIENT_KEY:}
+      client-secret: ${TIKTOK_CLIENT_SECRET:}
+      redirect-uri: ${TIKTOK_REDIRECT_URI:http://localhost:8090/api/accounts/oauth2/callback/tiktok}
+      frontend-redirect: ${FRONTEND_REDIRECT:http://localhost:3000/settings/accounts}
+    facebook:
+      app-id: ${FACEBOOK_APP_ID:}
+      app-secret: ${FACEBOOK_APP_SECRET:}
+      redirect-uri: ${FACEBOOK_REDIRECT_URI:http://localhost:8090/api/accounts/oauth2/callback/facebook}
+      scope: ${FACEBOOK_SCOPE:public_profile}
+      frontend-redirect: ${FRONTEND_REDIRECT:http://localhost:3000/settings/accounts}
+
+logging:
+  level:
+    root: INFO
+    com.autoclip: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html

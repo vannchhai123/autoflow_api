@@ -1,0 +1,63 @@
+# ==============================================================================
+# AutoClip Backend .gitignore
+# ==============================================================================
+
+# Compiled class files & Maven build artifacts
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+*.jar
+*.war
+
+# IDE & Editor configuration
+.idea/
+*.iws
+*.iml
+*.ipr
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Environment files and credentials (NEVER commit secrets)
+.env
+.env.*
+.env.local
+!.env.example
+*.pem
+*.key
+oauth_credentials.json
+storage/oauth_credentials.json
+
+# Local storage and generated user media artifacts
+storage/videos/*
+!storage/videos/.gitkeep
+storage/audio/*
+!storage/audio/.gitkeep
+storage/thumbnails/*
+!storage/thumbnails/.gitkeep
+storage/cloned_voices/*
+!storage/cloned_voices/.gitkeep
+
+# Python caches and bytecode
+scripts/__pycache__/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# OS & temporary runtime logs
+.DS_Store
+Thumbs.db
+*.log
+logs/
+*.tmp
+*.bak
