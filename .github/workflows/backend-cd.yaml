@@ -31,7 +31,7 @@ jobs:
           cache: maven
 
       - name: Compile & Verify Application
-        run: mvn -B clean test-compile
+        run: mvn -B clean test-compile -Dfmt.skip=true
 
   deploy:
     name: Build Image, Push to GHCR & Deploy to Render
