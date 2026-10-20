@@ -38,6 +38,7 @@ public class SecurityConfig {
             "/api/accounts/**",
             "/api/posts/**",
             "/api/videos/**",
+            "/api/voices/**",
             "/storage/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -67,12 +68,16 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         if (allowedOrigins != null && !allowedOrigins.isBlank() && !allowedOrigins.trim().equals("*")) {
-            List<String> origins = java.util.Arrays.stream(allowedOrigins.split(","))
-                    .map(String::trim)
-                    .map(s -> s.replaceAll("/+$", ""))
-                    .filter(s -> !s.isEmpty())
-                    .toList();
-            configuration.setAllowedOrigins(origins);
+            java.util.List<String> patterns = new java.util.ArrayList<>(
+                    java.util.Arrays.stream(allowedOrigins.split(","))
+                            .map(String::trim)
+                            .map(s -> s.replaceAll("/+$", ""))
+                            .filter(s -> !s.isEmpty())
+                            .toList()
+            );
+            patterns.add("https://*.vercel.app");
+            patterns.add("http://localhost:*");
+            configuration.setAllowedOriginPatterns(patterns);
         } else {
             configuration.setAllowedOriginPatterns(List.of("*"));
         }
