@@ -147,6 +147,16 @@ public class SocialAccountController {
                     "configured", tikTokOAuthService.hasCredentials()
             ));
         }
+
+        if ("FACEBOOK".equalsIgnoreCase(platform)) {
+            facebookOAuthService.setCredentials(clientId, clientSecret);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "platform", "FACEBOOK",
+                    "configured", facebookOAuthService.hasCredentials()
+            ));
+        }
+
         return ResponseEntity.badRequest().body(Map.of("error", "Unsupported platform: " + platform));
     }
 

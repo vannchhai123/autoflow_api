@@ -21,8 +21,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -65,6 +70,59 @@ public class FacebookOAuthService {
         if (frontendRedirect == null || frontendRedirect.isBlank()) {
             frontendRedirect = "http://localhost:3000/settings/accounts";
         }
+        loadSavedCredentials();
+    }
+
+    public synchronized void setCredentials(String newAppId, String newAppSecret) {
+        this.appId = (newAppId != null) ? newAppId.trim() : "";
+        this.appSecret = (newAppSecret != null) ? newAppSecret.trim() : "";
+        saveCredentialsToFile();
+    }
+
+    public boolean hasCredentials() {
+        return appId != null && !appId.isBlank();
+    }
+
+    private void loadSavedCredentials() {
+        try {
+            Path file = Paths.get("storage", "oauth_credentials.json");
+            if (Files.exists(file)) {
+                JsonNode root = objectMapper.readTree(file.toFile());
+                JsonNode fb = root.path("facebook");
+                if (fb.has("appId") && (this.appId == null || this.appId.isBlank())) {
+                    this.appId = fb.get("appId").asText();
+                }
+                if (fb.has("appSecret") && (this.appSecret == null || this.appSecret.isBlank())) {
+                    this.appSecret = fb.get("appSecret").asText();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not load Facebook credentials from storage: {}", e.getMessage());
+        }
+    }
+
+    private void saveCredentialsToFile() {
+        try {
+            Path storageDir = Paths.get("storage");
+            Files.createDirectories(storageDir);
+            Path file = storageDir.resolve("oauth_credentials.json");
+            Map<String, Object> map = new HashMap<>();
+            if (Files.exists(file)) {
+                try {
+                    JsonNode existing = objectMapper.readTree(file.toFile());
+                    if (existing.isObject()) {
+                        map = objectMapper.convertValue(existing, Map.class);
+                    }
+                } catch (Exception ignored) {}
+            }
+            Map<String, String> fbMap = new HashMap<>();
+            fbMap.put("appId", this.appId != null ? this.appId : "");
+            fbMap.put("appSecret", this.appSecret != null ? this.appSecret : "");
+            map.put("facebook", fbMap);
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), map);
+        } catch (Exception e) {
+            log.error("Failed to persist Facebook OAuth credentials: {}", e.getMessage());
+        }
     }
 
     private User resolveDefaultUser() {
@@ -76,7 +134,7 @@ public class FacebookOAuthService {
     }
 
     public String buildAuthorizationUrl(UUID userId) {
-        if (appId == null || appId.isBlank()) {
+        if (!hasCredentials()) {
             log.warn("FACEBOOK_APP_ID is not configured.");
             return frontendRedirect + "?error=missing_credentials_facebook";
         }

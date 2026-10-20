@@ -26,13 +26,14 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
+        String email = request.email().trim();
+        if (userRepository.existsByEmail(email)) {
             throw new BusinessException("Email already registered", HttpStatus.CONFLICT);
         }
         User user = new User();
-        user.setEmail(request.email());
-        user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setDisplayName(request.displayName());
+        user.setEmail(email);
+        user.setPasswordHash(passwordEncoder.encode(request.password().trim()));
+        user.setDisplayName(request.displayName().trim());
         userRepository.save(user);
         return toResponse(user);
     }
@@ -40,7 +41,7 @@ public class AuthService {
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
         var authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+                new UsernamePasswordAuthenticationToken(request.email().trim(), request.password().trim()));
         return toResponse((User) authentication.getPrincipal());
     }
 

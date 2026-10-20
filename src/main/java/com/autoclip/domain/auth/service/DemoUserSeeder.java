@@ -36,9 +36,13 @@ public class DemoUserSeeder implements CommandLineRunner {
                 ? configuredAdminEmail.trim()
                 : "admin@autoclip.app";
 
+        String cleanPassword = (configuredAdminPassword != null && !configuredAdminPassword.isBlank())
+                ? configuredAdminPassword.trim()
+                : null;
+
         User targetUser = userRepository.findByEmail(targetEmail).orElseGet(() -> {
-            String initialPassword = (configuredAdminPassword != null && !configuredAdminPassword.isBlank())
-                    ? configuredAdminPassword
+            String initialPassword = (cleanPassword != null)
+                    ? cleanPassword
                     : "AutoClipAdmin123!";
             User newUser = new User();
             newUser.setEmail(targetEmail);
@@ -50,8 +54,8 @@ public class DemoUserSeeder implements CommandLineRunner {
             return saved;
         });
 
-        if (configuredAdminPassword != null && !configuredAdminPassword.isBlank()) {
-            targetUser.setPasswordHash(passwordEncoder.encode(configuredAdminPassword));
+        if (cleanPassword != null) {
+            targetUser.setPasswordHash(passwordEncoder.encode(cleanPassword));
             targetUser.setRole(Role.ADMIN);
             targetUser = userRepository.save(targetUser);
             log.info("Admin password synchronized with environment configuration for: {}", targetEmail);
