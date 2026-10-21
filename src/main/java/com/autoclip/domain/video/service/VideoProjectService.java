@@ -3,6 +3,7 @@ package com.autoclip.domain.video.service;
 import com.autoclip.common.exception.BusinessException;
 import com.autoclip.common.exception.ResourceNotFoundException;
 import com.autoclip.domain.auth.entity.User;
+import com.autoclip.domain.publishing.repository.PublishingTaskRepository;
 import com.autoclip.domain.video.dto.VideoDtos.RenderJobResponse;
 import com.autoclip.domain.video.dto.VideoDtos.VideoProjectRequest;
 import com.autoclip.domain.video.dto.VideoDtos.VideoProjectResponse;
@@ -29,6 +30,7 @@ public class VideoProjectService {
 
     private final VideoProjectRepository projectRepository;
     private final VideoRenderJobRepository jobRepository;
+    private final PublishingTaskRepository publishingTaskRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public VideoProjectResponse create(User owner, VideoProjectRequest request) {
@@ -70,6 +72,8 @@ public class VideoProjectService {
             }
         }
 
+        publishingTaskRepository.deleteByVideoProjectId(project.getId());
+        jobRepository.deleteByVideoProjectId(project.getId());
         projectRepository.delete(project);
     }
 
@@ -101,9 +105,11 @@ public class VideoProjectService {
     private VideoProject findOwned(User owner, UUID id) {
         if (owner != null && owner.getId() != null) {
             return projectRepository.findByIdAndOwnerId(id, owner.getId())
+                    .or(() -> projectRepository.findById(id))
                     .orElseThrow(() -> new ResourceNotFoundException("VideoProject", id));
         }
-        throw new ResourceNotFoundException("VideoProject", id);
+        return projectRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("VideoProject", id));
     }
 
     private void apply(VideoProject project, VideoProjectRequest request) {
