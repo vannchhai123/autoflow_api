@@ -47,6 +47,13 @@ public class SocialAccountController {
         }
         List<SocialAccountResponse> accounts = accountRepository.findByOwnerId(target.getId())
                 .stream()
+                .map(account -> {
+                    if (account.getPlatform() == Platform.YOUTUBE_SHORTS
+                            && (account.getViewsCount() == null || account.getVideosCount() == null)) {
+                        return youTubeOAuthService.syncChannelStatistics(account);
+                    }
+                    return account;
+                })
                 .map(SocialAccountResponse::fromEntity)
                 .toList();
         return ResponseEntity.ok(accounts);
@@ -110,6 +117,11 @@ public class SocialAccountController {
 
         if (target == null || !account.getOwner().getId().equals(target.getId())) {
             throw new IllegalArgumentException("Social account not found or access denied");
+        }
+
+        if (account.getPlatform() == Platform.YOUTUBE_SHORTS) {
+            SocialAccount synced = youTubeOAuthService.syncChannelStatistics(account);
+            return ResponseEntity.ok(SocialAccountResponse.fromEntity(synced));
         }
 
         account.setStatus(AccountStatus.CONNECTED);
@@ -190,6 +202,8 @@ public class SocialAccountController {
         account.setTokenExpiresAt(Instant.now().plusSeconds(60 * 86400));
         account.setStatus(AccountStatus.CONNECTED);
         account.setFollowersCount(12500L);
+        account.setViewsCount(64200L);
+        account.setVideosCount(18L);
         account.setAccountType("CREATOR");
 
         SocialAccount saved = accountRepository.save(account);

@@ -16,7 +16,9 @@ public record SocialAccountResponse(
         Instant tokenExpiresAt,
         String accountType,
         Instant connectedAt,
-        Long followersCount
+        Long followersCount,
+        Long viewsCount,
+        Long videosCount
 ) {
     public static SocialAccountResponse fromEntity(SocialAccount account) {
         return new SocialAccountResponse(
@@ -28,7 +30,9 @@ public record SocialAccountResponse(
                 account.getTokenExpiresAt(),
                 account.getAccountType(),
                 account.getCreatedAt(),
-                account.getFollowersCount()
+                account.getFollowersCount(),
+                account.getViewsCount(),
+                account.getVideosCount()
         );
     }
 }

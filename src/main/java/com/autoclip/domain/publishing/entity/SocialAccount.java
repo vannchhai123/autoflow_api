@@ -52,4 +52,8 @@ public class SocialAccount extends BaseEntity {
     private String avatarUrl;
 
     private Long followersCount;
+
+    private Long viewsCount;
+
+    private Long videosCount;
 }

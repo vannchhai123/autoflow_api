@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -160,6 +159,8 @@ public class YouTubeOAuthService {
         account.setTokenExpiresAt(Instant.now().plusSeconds(60 * 86400));
         account.setStatus(AccountStatus.CONNECTED);
         account.setFollowersCount(14800L);
+        account.setViewsCount(125400L);
+        account.setVideosCount(42L);
         account.setAccountType("CREATOR");
 
         return socialAccountRepository.save(account);
@@ -225,6 +226,8 @@ public class YouTubeOAuthService {
             String channelName = "YouTube Channel";
             String avatarUrl = "";
             long followersCount = 0;
+            long viewsCount = 0;
+            long videosCount = 0;
 
             if (channelRes.statusCode() == 200) {
                 JsonNode channelJson = objectMapper.readTree(channelRes.body());
@@ -233,7 +236,10 @@ public class YouTubeOAuthService {
                     JsonNode channel = items.get(0);
                     channelName = channel.path("snippet").path("title").asText("YouTube Channel");
                     avatarUrl = channel.path("snippet").path("thumbnails").path("default").path("url").asText("");
-                    followersCount = channel.path("statistics").path("subscriberCount").asLong(0);
+                    JsonNode stats = channel.path("statistics");
+                    followersCount = stats.path("subscriberCount").asLong(0);
+                    viewsCount = stats.path("viewCount").asLong(0);
+                    videosCount = stats.path("videoCount").asLong(0);
                 }
             } else {
                 log.warn("Could not query YouTube channel profile: {}", channelRes.body());
@@ -272,16 +278,83 @@ public class YouTubeOAuthService {
             account.setTokenExpiresAt(Instant.now().plusSeconds(expiresIn));
             account.setStatus(AccountStatus.CONNECTED);
             account.setFollowersCount(followersCount);
+            account.setViewsCount(viewsCount);
+            account.setVideosCount(videosCount);
             account.setAccountType("CREATOR");
 
             socialAccountRepository.save(account);
-            log.info("Successfully linked YouTube channel '{}' ({}) to user {}", channelName, account.getId(), user.getEmail());
+            log.info("Successfully linked YouTube channel '{}' ({}) to user {} [subs={}, views={}, videos={}]",
+                    channelName, account.getId(), user.getEmail(), followersCount, viewsCount, videosCount);
 
             return frontendRedirect + "?connected=YOUTUBE_SHORTS";
         } catch (Exception e) {
             log.error("Exception handling YouTube OAuth callback", e);
             return frontendRedirect + "?error=oauth_exception";
         }
+    }
+
+    @Transactional
+    public SocialAccount syncChannelStatistics(SocialAccount account) {
+        if (account == null || account.getPlatform() != Platform.YOUTUBE_SHORTS) {
+            return account;
+        }
+        String token = account.getAccessToken();
+        if (token == null || token.isBlank() || token.startsWith("demo_")) {
+            return account;
+        }
+
+        try {
+            if (account.getTokenExpiresAt() != null && account.getTokenExpiresAt().isBefore(Instant.now().plusSeconds(60))) {
+                token = refreshAccessToken(account);
+            }
+
+            HttpRequest channelReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true"))
+                    .header("Authorization", "Bearer " + token)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> channelRes = httpClient.send(channelReq, HttpResponse.BodyHandlers.ofString());
+
+            if (channelRes.statusCode() == 401 && account.getRefreshToken() != null && !account.getRefreshToken().isBlank()) {
+                token = refreshAccessToken(account);
+                channelReq = HttpRequest.newBuilder()
+                        .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true"))
+                        .header("Authorization", "Bearer " + token)
+                        .GET()
+                        .build();
+                channelRes = httpClient.send(channelReq, HttpResponse.BodyHandlers.ofString());
+            }
+
+            if (channelRes.statusCode() == 200) {
+                JsonNode channelJson = objectMapper.readTree(channelRes.body());
+                JsonNode items = channelJson.path("items");
+                if (items.isArray() && !items.isEmpty()) {
+                    JsonNode channel = items.get(0);
+                    String channelName = channel.path("snippet").path("title").asText(account.getChannelName());
+                    String avatarUrl = channel.path("snippet").path("thumbnails").path("default").path("url").asText(account.getAvatarUrl());
+                    JsonNode stats = channel.path("statistics");
+                    long followersCount = stats.path("subscriberCount").asLong(account.getFollowersCount() != null ? account.getFollowersCount() : 0);
+                    long viewsCount = stats.path("viewCount").asLong(0);
+                    long videosCount = stats.path("videoCount").asLong(0);
+
+                    account.setChannelName(channelName);
+                    if (avatarUrl != null && !avatarUrl.isBlank()) {
+                        account.setAvatarUrl(avatarUrl);
+                    }
+                    account.setFollowersCount(followersCount);
+                    account.setViewsCount(viewsCount);
+                    account.setVideosCount(videosCount);
+                    account.setStatus(AccountStatus.CONNECTED);
+                    return socialAccountRepository.save(account);
+                }
+            } else {
+                log.warn("Failed to sync YouTube channel statistics (HTTP {}): {}", channelRes.statusCode(), channelRes.body());
+            }
+        } catch (Exception e) {
+            log.warn("Error syncing YouTube channel statistics for account {}: {}", account.getId(), e.getMessage());
+        }
+        return account;
     }
 
     public String refreshAccessToken(SocialAccount account) {
@@ -370,7 +443,6 @@ public class YouTubeOAuthService {
             HttpResponse<byte[]> videoRes = httpClient.send(fetchVideo, HttpResponse.BodyHandlers.ofByteArray());
             videoBytes = videoRes.body();
         } else {
-            
             videoBytes = new byte[1024];
         }
 
