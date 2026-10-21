@@ -60,6 +60,8 @@ public class YouTubeOAuthService {
             .connectTimeout(Duration.ofSeconds(15))
             .build();
 
+    private final java.util.Set<String> deletedYouTubeVideoIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     @jakarta.annotation.PostConstruct
     public void init() {
         if (redirectUri == null || redirectUri.isBlank()) {
@@ -69,6 +71,114 @@ public class YouTubeOAuthService {
             frontendRedirect = "http://localhost:3000/settings/accounts";
         }
         loadSavedCredentials();
+        loadDeletedVideoIds();
+    }
+
+    private void loadDeletedVideoIds() {
+        try {
+            Path file = Paths.get("storage", "deleted_youtube_videos.json");
+            if (Files.exists(file)) {
+                JsonNode arr = objectMapper.readTree(file.toFile());
+                if (arr.isArray()) {
+                    for (JsonNode n : arr) {
+                        String id = n.asText("");
+                        if (!id.isBlank()) {
+                            deletedYouTubeVideoIds.add(id);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void saveDeletedVideoIds() {
+        try {
+            Path storageDir = Paths.get("storage");
+            Files.createDirectories(storageDir);
+            Path file = storageDir.resolve("deleted_youtube_videos.json");
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), new ArrayList<>(deletedYouTubeVideoIds));
+        } catch (Exception ignored) {
+        }
+    }
+
+    public String extractYouTubeVideoId(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        String s = raw.trim();
+        if (s.startsWith("yt-")) {
+            return s.substring(3).trim();
+        }
+        if (s.contains("watch?v=")) {
+            int idx = s.indexOf("watch?v=") + 8;
+            String rest = s.substring(idx);
+            int amp = rest.indexOf('&');
+            return (amp >= 0 ? rest.substring(0, amp) : rest).trim();
+        }
+        if (s.contains("/shorts/")) {
+            int idx = s.indexOf("/shorts/") + 8;
+            String rest = s.substring(idx);
+            int q = rest.indexOf('?');
+            return (q >= 0 ? rest.substring(0, q) : rest).trim();
+        }
+        if (s.contains("youtu.be/")) {
+            int idx = s.indexOf("youtu.be/") + 9;
+            String rest = s.substring(idx);
+            int q = rest.indexOf('?');
+            return (q >= 0 ? rest.substring(0, q) : rest).trim();
+        }
+        return s;
+    }
+
+    @Transactional
+    public boolean deleteChannelVideo(SocialAccount account, String videoIdOrUrl) {
+        String ytId = extractYouTubeVideoId(videoIdOrUrl);
+        if (ytId.isBlank()) {
+            return false;
+        }
+        deletedYouTubeVideoIds.add(ytId);
+        saveDeletedVideoIds();
+
+        if (account == null || account.getAccessToken() == null || account.getAccessToken().isBlank()
+                || account.getAccessToken().startsWith("demo_")) {
+            return false;
+        }
+
+        try {
+            String token = account.getAccessToken();
+            if (account.getTokenExpiresAt() != null && account.getTokenExpiresAt().isBefore(Instant.now().plusSeconds(60))) {
+                token = refreshAccessToken(account);
+            }
+
+            HttpRequest delReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.googleapis.com/youtube/v3/videos?id="
+                            + URLEncoder.encode(ytId, StandardCharsets.UTF_8)))
+                    .header("Authorization", "Bearer " + token)
+                    .DELETE()
+                    .build();
+
+            HttpResponse<String> delRes = httpClient.send(delReq, HttpResponse.BodyHandlers.ofString());
+            if (delRes.statusCode() == 401 && account.getRefreshToken() != null && !account.getRefreshToken().isBlank()) {
+                token = refreshAccessToken(account);
+                delReq = HttpRequest.newBuilder()
+                        .uri(URI.create("https://www.googleapis.com/youtube/v3/videos?id="
+                                + URLEncoder.encode(ytId, StandardCharsets.UTF_8)))
+                        .header("Authorization", "Bearer " + token)
+                        .DELETE()
+                        .build();
+                delRes = httpClient.send(delReq, HttpResponse.BodyHandlers.ofString());
+            }
+
+            if (account.getVideosCount() != null && account.getVideosCount() > 0) {
+                account.setVideosCount(account.getVideosCount() - 1);
+                socialAccountRepository.save(account);
+            }
+
+            log.info("Deleted YouTube video {} from source platform (HTTP {})", ytId, delRes.statusCode());
+            return delRes.statusCode() == 204 || delRes.statusCode() == 200;
+        } catch (Exception e) {
+            log.warn("Could not delete YouTube video {} from remote API: {}", ytId, e.getMessage());
+            return false;
+        }
     }
 
     public synchronized void setCredentials(String newClientId, String newClientSecret) {
@@ -175,7 +285,8 @@ public class YouTubeOAuthService {
             return frontendRedirect + "?error=missing_credentials";
         }
 
-        String scopes = "https://www.googleapis.com/auth/youtube.upload " +
+        String scopes = "https://www.googleapis.com/auth/youtube " +
+                "https://www.googleapis.com/auth/youtube.upload " +
                 "https://www.googleapis.com/auth/youtube.readonly " +
                 "https://www.googleapis.com/auth/userinfo.profile";
 
@@ -436,7 +547,7 @@ public class YouTubeOAuthService {
             List<String> videoIds = new ArrayList<>();
             for (JsonNode item : playlistItems) {
                 String vid = item.path("contentDetails").path("videoId").asText("");
-                if (!vid.isBlank()) {
+                if (!vid.isBlank() && !deletedYouTubeVideoIds.contains(vid)) {
                     videoIds.add(vid);
                 }
             }

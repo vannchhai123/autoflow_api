@@ -45,6 +45,13 @@ public interface PublishingTaskRepository extends JpaRepository<PublishingTask, 
             """)
     List<PublishingTask> findByOwnerId(@Param("ownerId") UUID ownerId);
 
+    @EntityGraph(attributePaths = {"videoProject", "socialAccount"})
+    @Query("select t from PublishingTask t where t.videoProject.id = :videoProjectId")
+    List<PublishingTask> findByVideoProjectId(@Param("videoProjectId") UUID videoProjectId);
+
+    @EntityGraph(attributePaths = {"videoProject", "socialAccount"})
+    List<PublishingTask> findByPublicPostUrlContaining(String fragment);
+
     long countByStatus(PublishingStatus status);
 
     @Modifying

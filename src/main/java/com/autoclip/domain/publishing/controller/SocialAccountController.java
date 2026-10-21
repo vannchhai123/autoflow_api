@@ -1,14 +1,23 @@
 package com.autoclip.domain.publishing.controller;
 
 import com.autoclip.domain.auth.entity.User;
+import com.autoclip.domain.auth.repository.UserRepository;
 import com.autoclip.domain.publishing.dto.SocialAccountResponse;
 import com.autoclip.domain.publishing.entity.AccountStatus;
 import com.autoclip.domain.publishing.entity.Platform;
+import com.autoclip.domain.publishing.entity.PublishingTask;
 import com.autoclip.domain.publishing.entity.SocialAccount;
+import com.autoclip.domain.publishing.repository.PublishingTaskRepository;
 import com.autoclip.domain.publishing.repository.SocialAccountRepository;
+import com.autoclip.domain.publishing.service.TikTokOAuthService;
+import com.autoclip.domain.publishing.service.YouTubeOAuthService;
+import com.autoclip.domain.video.entity.VideoProject;
+import com.autoclip.domain.video.repository.VideoProjectRepository;
+import com.autoclip.domain.video.repository.VideoRenderJobRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -22,9 +31,12 @@ import java.util.UUID;
 public class SocialAccountController {
 
     private final SocialAccountRepository accountRepository;
-    private final com.autoclip.domain.auth.repository.UserRepository userRepository;
-    private final com.autoclip.domain.publishing.service.YouTubeOAuthService youTubeOAuthService;
-    private final com.autoclip.domain.publishing.service.TikTokOAuthService tikTokOAuthService;
+    private final PublishingTaskRepository publishingTaskRepository;
+    private final VideoProjectRepository videoProjectRepository;
+    private final VideoRenderJobRepository videoRenderJobRepository;
+    private final UserRepository userRepository;
+    private final YouTubeOAuthService youTubeOAuthService;
+    private final TikTokOAuthService tikTokOAuthService;
     private final com.autoclip.domain.publishing.service.FacebookOAuthService facebookOAuthService;
 
     @org.springframework.beans.factory.annotation.Value("${autoclip.admin.email:}")
@@ -72,6 +84,68 @@ public class SocialAccountController {
             }
         }
         return ResponseEntity.ok(allVideos);
+    }
+
+    @DeleteMapping("/videos/{videoId}")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> deleteChannelVideo(
+            @PathVariable String videoId,
+            @AuthenticationPrincipal User user) {
+        User target = resolveUser(user);
+        boolean deletedRemote = false;
+
+        if (target != null) {
+            for (SocialAccount account : accountRepository.findByOwnerId(target.getId())) {
+                if (account.getPlatform() == Platform.YOUTUBE_SHORTS) {
+                    if (youTubeOAuthService.deleteChannelVideo(account, videoId)) {
+                        deletedRemote = true;
+                    }
+                }
+            }
+        }
+
+        String ytId = youTubeOAuthService.extractYouTubeVideoId(videoId);
+        if (!ytId.isBlank()) {
+            List<PublishingTask> matchingTasks = publishingTaskRepository.findByPublicPostUrlContaining(ytId);
+            for (PublishingTask task : matchingTasks) {
+                VideoProject vp = task.getVideoProject();
+                publishingTaskRepository.delete(task);
+                if (vp != null) {
+                    publishingTaskRepository.deleteByVideoProjectId(vp.getId());
+                    videoRenderJobRepository.deleteByVideoProjectId(vp.getId());
+                    videoProjectRepository.delete(vp);
+                }
+            }
+        }
+
+        try {
+            UUID uuid = UUID.fromString(videoId);
+            publishingTaskRepository.findById(uuid).ifPresent(task -> {
+                if (task.getPublicPostUrl() != null) {
+                    youTubeOAuthService.deleteChannelVideo(task.getSocialAccount(), task.getPublicPostUrl());
+                }
+                VideoProject vp = task.getVideoProject();
+                publishingTaskRepository.delete(task);
+                if (vp != null) {
+                    publishingTaskRepository.deleteByVideoProjectId(vp.getId());
+                    videoRenderJobRepository.deleteByVideoProjectId(vp.getId());
+                    videoProjectRepository.delete(vp);
+                }
+            });
+            videoProjectRepository.findById(uuid).ifPresent(vp -> {
+                for (PublishingTask task : publishingTaskRepository.findByVideoProjectId(vp.getId())) {
+                    if (task.getPublicPostUrl() != null) {
+                        youTubeOAuthService.deleteChannelVideo(task.getSocialAccount(), task.getPublicPostUrl());
+                    }
+                }
+                publishingTaskRepository.deleteByVideoProjectId(vp.getId());
+                videoRenderJobRepository.deleteByVideoProjectId(vp.getId());
+                videoProjectRepository.delete(vp);
+            });
+        } catch (IllegalArgumentException ignored) {
+        }
+
+        return ResponseEntity.ok(Map.of("deleted", true, "deletedFromSource", deletedRemote));
     }
 
     @PostMapping("/connect/{platform}")

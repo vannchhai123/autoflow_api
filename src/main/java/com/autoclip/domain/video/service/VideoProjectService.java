@@ -3,7 +3,9 @@ package com.autoclip.domain.video.service;
 import com.autoclip.common.exception.BusinessException;
 import com.autoclip.common.exception.ResourceNotFoundException;
 import com.autoclip.domain.auth.entity.User;
+import com.autoclip.domain.publishing.entity.PublishingTask;
 import com.autoclip.domain.publishing.repository.PublishingTaskRepository;
+import com.autoclip.domain.publishing.service.YouTubeOAuthService;
 import com.autoclip.domain.video.dto.VideoDtos.RenderJobResponse;
 import com.autoclip.domain.video.dto.VideoDtos.VideoProjectRequest;
 import com.autoclip.domain.video.dto.VideoDtos.VideoProjectResponse;
@@ -21,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -31,6 +34,7 @@ public class VideoProjectService {
     private final VideoProjectRepository projectRepository;
     private final VideoRenderJobRepository jobRepository;
     private final PublishingTaskRepository publishingTaskRepository;
+    private final YouTubeOAuthService youTubeOAuthService;
     private final ApplicationEventPublisher eventPublisher;
 
     public VideoProjectResponse create(User owner, VideoProjectRequest request) {
@@ -69,6 +73,13 @@ public class VideoProjectService {
                 java.nio.file.Path filePath = java.nio.file.Paths.get("storage", "videos", fileName);
                 java.nio.file.Files.deleteIfExists(filePath);
             } catch (Exception ignored) {
+            }
+        }
+
+        List<PublishingTask> tasks = publishingTaskRepository.findByVideoProjectId(project.getId());
+        for (PublishingTask task : tasks) {
+            if (task.getPublicPostUrl() != null && !task.getPublicPostUrl().isBlank()) {
+                youTubeOAuthService.deleteChannelVideo(task.getSocialAccount(), task.getPublicPostUrl());
             }
         }
 
