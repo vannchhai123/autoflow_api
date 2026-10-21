@@ -34,6 +34,17 @@ public class VideoEngineService {
     @Value("${server.port:8080}")
     private String serverPort;
 
+    private String resolvePythonExecutable() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (!os.contains("win")) {
+            if (new File("/usr/bin/python3").exists()) {
+                return "/usr/bin/python3";
+            }
+            return "python3";
+        }
+        return "python";
+    }
+
     public String render(VideoProject project, VideoRenderJob job) throws Exception {
         String videoFileName = project.getId().toString() + ".mp4";
         Path outputPath = Paths.get("storage", "videos", videoFileName).toAbsolutePath();
@@ -49,8 +60,10 @@ public class VideoEngineService {
                 ? project.getVoice()
                 : "en-US-ChristopherNeural";
 
+        String pythonExec = resolvePythonExecutable();
+
         List<String> command = new ArrayList<>(List.of(
-                "python",
+                pythonExec,
                 scriptPath,
                 "--title", project.getTitle(),
                 "--text", scriptText,
@@ -97,7 +110,7 @@ public class VideoEngineService {
             }
             if (!command.contains("--cloned_profile")) {
                 command.add("--voice");
-                command.add("km-KH-PisethNeural");
+                command.add("en-US-ChristopherNeural");
             }
         } else {
             command.add("--voice");
@@ -109,7 +122,7 @@ public class VideoEngineService {
         processBuilder.environment().put("PYTHONIOENCODING", "utf-8");
 
         processBuilder.redirectErrorStream(false);
-        log.info("Starting video render process for project: {}", project.getId());
+        log.info("Starting video render process for project: {} using {}", project.getId(), pythonExec);
 
         Process process = processBuilder.start();
 
@@ -145,6 +158,10 @@ public class VideoEngineService {
         if (storageBaseUrl != null && !storageBaseUrl.isBlank()) {
             return storageBaseUrl.replaceAll("/+$", "") + "/storage/videos/" + videoFileName;
         }
-        return "http://localhost:" + serverPort + "/storage/videos/" + videoFileName;
+        String renderUrl = System.getenv("RENDER_EXTERNAL_URL");
+        if (renderUrl != null && !renderUrl.isBlank()) {
+            return renderUrl.replaceAll("/+$", "") + "/storage/videos/" + videoFileName;
+        }
+        return "https://autoflow-api-f5c6.onrender.com/storage/videos/" + videoFileName;
     }
 }

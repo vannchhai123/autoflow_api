@@ -52,7 +52,11 @@ public class VideoRenderWorker {
 
     private void fail(VideoRenderJob job, RenderRequestedEvent event, String message) {
         job.setStatus(RenderJobStatus.FAILED);
-        job.setErrorMessage(message);
+        String safeMessage = message;
+        if (safeMessage != null && safeMessage.length() > 1900) {
+            safeMessage = safeMessage.substring(safeMessage.length() - 1900);
+        }
+        job.setErrorMessage(safeMessage);
         jobRepository.save(job);
         finishProject(event, VideoStatus.FAILED, null);
     }

@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -50,6 +51,17 @@ public class ClonedVoiceController {
 
     @Value("${autoclip.admin.email:}")
     private String adminEmail;
+
+    private String resolvePythonExecutable() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (!os.contains("win")) {
+            if (new File("/usr/bin/python3").exists()) {
+                return "/usr/bin/python3";
+            }
+            return "python3";
+        }
+        return "python";
+    }
 
     private User resolveUser(User user) {
         if (user != null) return user;
@@ -111,7 +123,7 @@ public class ClonedVoiceController {
 
         String scriptPath = Paths.get("scripts", "voice_cloner.py").toAbsolutePath().toString();
         ProcessBuilder pb = new ProcessBuilder(
-                "python",
+                resolvePythonExecutable(),
                 scriptPath,
                 "--analyze", audioPath.toString(),
                 "--base_voice", baseVoice

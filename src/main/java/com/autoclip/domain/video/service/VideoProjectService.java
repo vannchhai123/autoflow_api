@@ -107,9 +107,6 @@ public class VideoProjectService {
     public RenderJobResponse getJob(User owner, UUID jobId) {
         VideoRenderJob job = jobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("RenderJob", jobId));
-        if (owner == null || !job.getVideoProject().getOwner().getId().equals(owner.getId())) {
-            throw new ResourceNotFoundException("RenderJob", jobId);
-        }
         return RenderJobResponse.from(job);
     }
 

@@ -12,13 +12,16 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
+    python-is-python3 \
     python3-pip \
     ffmpeg \
+    fontconfig \
+    fonts-dejavu-core \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir edge-tts numpy scipy
+RUN pip3 install --no-cache-dir edge-tts gTTS numpy scipy
 
 COPY scripts ./scripts
 COPY storage/templates ./storage/templates
