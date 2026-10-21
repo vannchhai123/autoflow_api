@@ -59,6 +59,21 @@ public class SocialAccountController {
         return ResponseEntity.ok(accounts);
     }
 
+    @GetMapping("/videos")
+    public ResponseEntity<List<Map<String, Object>>> listChannelVideos(@AuthenticationPrincipal User user) {
+        User target = resolveUser(user);
+        if (target == null) {
+            return ResponseEntity.ok(List.of());
+        }
+        List<Map<String, Object>> allVideos = new java.util.ArrayList<>();
+        for (SocialAccount account : accountRepository.findByOwnerId(target.getId())) {
+            if (account.getPlatform() == Platform.YOUTUBE_SHORTS) {
+                allVideos.addAll(youTubeOAuthService.fetchChannelVideos(account));
+            }
+        }
+        return ResponseEntity.ok(allVideos);
+    }
+
     @PostMapping("/connect/{platform}")
     public ResponseEntity<Map<String, String>> initiateConnect(
             @PathVariable Platform platform,

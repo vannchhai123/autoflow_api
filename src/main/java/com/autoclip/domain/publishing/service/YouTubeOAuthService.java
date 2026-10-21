@@ -25,6 +25,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -355,6 +358,166 @@ public class YouTubeOAuthService {
             log.warn("Error syncing YouTube channel statistics for account {}: {}", account.getId(), e.getMessage());
         }
         return account;
+    }
+
+    @Transactional
+    public List<Map<String, Object>> fetchChannelVideos(SocialAccount account) {
+        if (account == null || account.getPlatform() != Platform.YOUTUBE_SHORTS) {
+            return List.of();
+        }
+        String token = account.getAccessToken();
+        if (token == null || token.isBlank() || token.startsWith("demo_")) {
+            return List.of();
+        }
+
+        try {
+            if (account.getTokenExpiresAt() != null && account.getTokenExpiresAt().isBefore(Instant.now().plusSeconds(60))) {
+                token = refreshAccessToken(account);
+            }
+
+            HttpRequest channelReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&mine=true"))
+                    .header("Authorization", "Bearer " + token)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> channelRes = httpClient.send(channelReq, HttpResponse.BodyHandlers.ofString());
+
+            if (channelRes.statusCode() == 401 && account.getRefreshToken() != null && !account.getRefreshToken().isBlank()) {
+                token = refreshAccessToken(account);
+                channelReq = HttpRequest.newBuilder()
+                        .uri(URI.create("https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&mine=true"))
+                        .header("Authorization", "Bearer " + token)
+                        .GET()
+                        .build();
+                channelRes = httpClient.send(channelReq, HttpResponse.BodyHandlers.ofString());
+            }
+
+            if (channelRes.statusCode() != 200) {
+                return List.of();
+            }
+
+            JsonNode channelJson = objectMapper.readTree(channelRes.body());
+            JsonNode items = channelJson.path("items");
+            if (!items.isArray() || items.isEmpty()) {
+                return List.of();
+            }
+
+            JsonNode channel = items.get(0);
+            JsonNode stats = channel.path("statistics");
+            account.setFollowersCount(stats.path("subscriberCount").asLong(account.getFollowersCount() != null ? account.getFollowersCount() : 0));
+            account.setViewsCount(stats.path("viewCount").asLong(0));
+            account.setVideosCount(stats.path("videoCount").asLong(0));
+            socialAccountRepository.save(account);
+
+            String uploadsPlaylistId = channel.path("contentDetails").path("relatedPlaylists").path("uploads").asText("");
+            if (uploadsPlaylistId.isBlank()) {
+                return List.of();
+            }
+
+            HttpRequest playlistReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=24&playlistId="
+                            + URLEncoder.encode(uploadsPlaylistId, StandardCharsets.UTF_8)))
+                    .header("Authorization", "Bearer " + token)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> playlistRes = httpClient.send(playlistReq, HttpResponse.BodyHandlers.ofString());
+            if (playlistRes.statusCode() != 200) {
+                return List.of();
+            }
+
+            JsonNode playlistJson = objectMapper.readTree(playlistRes.body());
+            JsonNode playlistItems = playlistJson.path("items");
+            if (!playlistItems.isArray() || playlistItems.isEmpty()) {
+                return List.of();
+            }
+
+            List<String> videoIds = new ArrayList<>();
+            for (JsonNode item : playlistItems) {
+                String vid = item.path("contentDetails").path("videoId").asText("");
+                if (!vid.isBlank()) {
+                    videoIds.add(vid);
+                }
+            }
+
+            if (videoIds.isEmpty()) {
+                return List.of();
+            }
+
+            HttpRequest videosReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id="
+                            + URLEncoder.encode(String.join(",", videoIds), StandardCharsets.UTF_8)))
+                    .header("Authorization", "Bearer " + token)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> videosRes = httpClient.send(videosReq, HttpResponse.BodyHandlers.ofString());
+            if (videosRes.statusCode() != 200) {
+                return List.of();
+            }
+
+            JsonNode videosJson = objectMapper.readTree(videosRes.body());
+            JsonNode videoNodes = videosJson.path("items");
+            List<Map<String, Object>> result = new ArrayList<>();
+
+            if (videoNodes.isArray()) {
+                for (JsonNode v : videoNodes) {
+                    String vid = v.path("id").asText("");
+                    if (vid.isBlank()) continue;
+
+                    JsonNode snippet = v.path("snippet");
+                    JsonNode vStats = v.path("statistics");
+                    JsonNode contentDetails = v.path("contentDetails");
+
+                    String title = snippet.path("title").asText("YouTube Video");
+                    String description = snippet.path("description").asText("");
+                    String publishedAt = snippet.path("publishedAt").asText("");
+
+                    JsonNode thumbs = snippet.path("thumbnails");
+                    String thumbUrl = thumbs.path("high").path("url").asText(
+                            thumbs.path("medium").path("url").asText(
+                                    thumbs.path("default").path("url").asText("")
+                            )
+                    );
+
+                    long durationSec = 45;
+                    String isoDuration = contentDetails.path("duration").asText("");
+                    if (!isoDuration.isBlank()) {
+                        try {
+                            durationSec = Duration.parse(isoDuration).getSeconds();
+                        } catch (Exception ignored) {}
+                    }
+
+                    long views = vStats.path("viewCount").asLong(0);
+                    long likes = vStats.path("likeCount").asLong(0);
+                    long comments = vStats.path("commentCount").asLong(0);
+
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("id", "yt-" + vid);
+                    map.put("videoId", vid);
+                    map.put("title", title);
+                    map.put("description", description);
+                    map.put("thumbnailUrl", thumbUrl);
+                    map.put("publicPostUrl", "https://www.youtube.com/watch?v=" + vid);
+                    map.put("embedUrl", "https://www.youtube.com/embed/" + vid);
+                    map.put("publishedAt", publishedAt);
+                    map.put("durationSeconds", durationSec);
+                    map.put("viewCount", views);
+                    map.put("likeCount", likes);
+                    map.put("commentCount", comments);
+                    map.put("platform", "YOUTUBE_SHORTS");
+                    map.put("channelName", account.getChannelName());
+                    map.put("status", "PUBLISHED");
+                    result.add(map);
+                }
+            }
+
+            return result;
+        } catch (Exception e) {
+            log.warn("Error fetching YouTube channel videos for account {}: {}", account.getId(), e.getMessage());
+            return List.of();
+        }
     }
 
     public String refreshAccessToken(SocialAccount account) {
