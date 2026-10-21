@@ -80,17 +80,17 @@ clipflow:
     google:
       client-id: ${GOOGLE_CLIENT_ID:}
       client-secret: ${GOOGLE_CLIENT_SECRET:}
-      redirect-uri: ${GOOGLE_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:http://localhost:8080}}/api/accounts/oauth2/callback/youtube}
+      redirect-uri: ${GOOGLE_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:https://autoflow-api-f5c6.onrender.com}}/api/accounts/oauth2/callback/youtube}
       frontend-redirect: ${FRONTEND_REDIRECT:${FRONTEND_URL:https://autoflow-app-phi.vercel.app}/settings/accounts}
     tiktok:
       client-key: ${TIKTOK_CLIENT_KEY:}
       client-secret: ${TIKTOK_CLIENT_SECRET:}
-      redirect-uri: ${TIKTOK_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:http://localhost:8080}}/api/accounts/oauth2/callback/tiktok}
+      redirect-uri: ${TIKTOK_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:https://autoflow-api-f5c6.onrender.com}}/api/accounts/oauth2/callback/tiktok}
       frontend-redirect: ${FRONTEND_REDIRECT:${FRONTEND_URL:https://autoflow-app-phi.vercel.app}/settings/accounts}
     facebook:
       app-id: ${FACEBOOK_APP_ID:}
       app-secret: ${FACEBOOK_APP_SECRET:}
-      redirect-uri: ${FACEBOOK_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:http://localhost:8080}}/api/accounts/oauth2/callback/facebook}
+      redirect-uri: ${FACEBOOK_REDIRECT_URI:${APP_BASE_URL:${RENDER_EXTERNAL_URL:https://autoflow-api-f5c6.onrender.com}}/api/accounts/oauth2/callback/facebook}
       scope: ${FACEBOOK_SCOPE:public_profile}
       frontend-redirect: ${FRONTEND_REDIRECT:${FRONTEND_URL:https://autoflow-app-phi.vercel.app}/settings/accounts}
 

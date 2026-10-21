@@ -44,7 +44,10 @@ public class TikTokOAuthService {
     @Value("${clipflow.oauth.tiktok.redirect-uri:http://localhost:8090/api/accounts/oauth2/callback/tiktok}")
     private String redirectUri;
 
-    @Value("${clipflow.oauth.tiktok.frontend-redirect:http://localhost:3000/settings/accounts}")
+    @Value("${clipflow.oauth.tiktok.scope:user.info.basic,video.publish,video.upload}")
+    private String scope;
+
+    @Value("${clipflow.oauth.tiktok.frontend-redirect:https://autoflow-app-phi.vercel.app/settings/accounts}")
     private String frontendRedirect;
 
     @Value("${autoclip.admin.email:}")
@@ -60,11 +63,15 @@ public class TikTokOAuthService {
 
     @PostConstruct
     public void init() {
-        if (redirectUri == null || redirectUri.isBlank()) {
-            redirectUri = "http://localhost:8090/api/accounts/oauth2/callback/tiktok";
+        String activeProfile = System.getenv("SPRING_PROFILES_ACTIVE");
+        String renderUrl = System.getenv("RENDER_EXTERNAL_URL");
+        if (redirectUri == null || redirectUri.isBlank()
+                || (redirectUri.contains("localhost") && ("prod".equalsIgnoreCase(activeProfile) || (renderUrl != null && !renderUrl.isBlank())))) {
+            String base = (renderUrl != null && !renderUrl.isBlank()) ? renderUrl.replaceAll("/+$", "") : "https://autoflow-api-f5c6.onrender.com";
+            redirectUri = base + "/api/accounts/oauth2/callback/tiktok";
         }
         if (frontendRedirect == null || frontendRedirect.isBlank()) {
-            frontendRedirect = "http://localhost:3000/settings/accounts";
+            frontendRedirect = "https://autoflow-app-phi.vercel.app/settings/accounts";
         }
         loadSavedCredentials();
     }
@@ -76,7 +83,15 @@ public class TikTokOAuthService {
     }
 
     public boolean hasCredentials() {
-        return clientKey != null && !clientKey.isBlank();
+        return clientKey != null && !clientKey.isBlank() && clientSecret != null && !clientSecret.isBlank();
+    }
+
+    public String getRedirectUri() {
+        return redirectUri;
+    }
+
+    public String getFrontendRedirect() {
+        return frontendRedirect;
     }
 
     private User resolveDefaultUser() {
@@ -160,6 +175,8 @@ public class TikTokOAuthService {
         account.setTokenExpiresAt(Instant.now().plusSeconds(60 * 86400));
         account.setStatus(AccountStatus.CONNECTED);
         account.setFollowersCount(24500L);
+        account.setViewsCount(189400L);
+        account.setVideosCount(36L);
         account.setAccountType("CREATOR");
 
         return socialAccountRepository.save(account);
@@ -167,15 +184,17 @@ public class TikTokOAuthService {
 
     public String buildAuthorizationUrl(UUID userId) {
         if (!hasCredentials()) {
-            log.warn("TIKTOK_CLIENT_KEY is not configured or is a mock key.");
+            log.warn("TIKTOK_CLIENT_KEY is not configured.");
             return frontendRedirect + "?error=missing_credentials_tiktok";
         }
 
-        String scope = "user.info.basic,video.publish,video.upload";
+        String requestedScope = (scope != null && !scope.isBlank())
+                ? scope.trim()
+                : "user.info.basic,video.publish,video.upload";
 
         return "https://www.tiktok.com/v2/auth/authorize/?" +
                 "client_key=" + URLEncoder.encode(clientKey, StandardCharsets.UTF_8) +
-                "&scope=" + URLEncoder.encode(scope, StandardCharsets.UTF_8) +
+                "&scope=" + URLEncoder.encode(requestedScope, StandardCharsets.UTF_8) +
                 "&response_type=code" +
                 "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8) +
                 "&state=" + (userId != null ? userId.toString() : "demo");
@@ -183,6 +202,9 @@ public class TikTokOAuthService {
 
     @Transactional
     public String handleCallback(String code, String state) {
+        if (code == null || code.isBlank()) {
+            return frontendRedirect + "?error=tiktok_missing_code";
+        }
         try {
             log.info("Handling TikTok OAuth callback with code...");
 
@@ -206,31 +228,24 @@ public class TikTokOAuthService {
             }
 
             JsonNode tokenJson = objectMapper.readTree(tokenRes.body());
-            JsonNode dataNode = tokenJson.path("data");
-            String accessToken = dataNode.path("access_token").asText(tokenJson.path("access_token").asText(""));
-            String refreshToken = dataNode.path("refresh_token").asText(tokenJson.path("refresh_token").asText(null));
-            long expiresIn = dataNode.path("expires_in").asLong(tokenJson.path("expires_in").asLong(86400));
+            if (tokenJson.has("error") && !tokenJson.path("error").asText("").isBlank()) {
+                String errCode = tokenJson.path("error").asText("tiktok_oauth_error");
+                String errDesc = tokenJson.path("error_description").asText(errCode);
+                log.error("TikTok OAuth token exchange returned error: {} - {}", errCode, errDesc);
+                return frontendRedirect + "?error=" + URLEncoder.encode(errDesc, StandardCharsets.UTF_8);
+            }
 
-            HttpRequest userReq = HttpRequest.newBuilder()
-                    .uri(URI.create("https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,follower_count"))
-                    .header("Authorization", "Bearer " + accessToken)
-                    .GET()
-                    .build();
+            JsonNode dataNode = tokenJson.has("data") && tokenJson.get("data").isObject()
+                    ? tokenJson.get("data")
+                    : tokenJson;
 
-            HttpResponse<String> userRes = httpClient.send(userReq, HttpResponse.BodyHandlers.ofString());
+            String accessToken = dataNode.path("access_token").asText("");
+            String refreshToken = dataNode.path("refresh_token").asText("");
+            long expiresIn = dataNode.path("expires_in").asLong(86400);
 
-            String channelName = "@tiktok_creator";
-            String avatarUrl = "";
-            long followersCount = 0;
-
-            if (userRes.statusCode() == 200) {
-                JsonNode userJson = objectMapper.readTree(userRes.body());
-                JsonNode userData = userJson.path("data").path("user");
-                channelName = "@" + userData.path("display_name").asText("tiktok_creator");
-                avatarUrl = userData.path("avatar_url").asText("");
-                followersCount = userData.path("follower_count").asLong(0);
-            } else {
-                log.warn("Could not query TikTok user profile: {}", userRes.body());
+            if (accessToken.isBlank()) {
+                log.error("TikTok token response missing access_token: {}", tokenRes.body());
+                return frontendRedirect + "?error=tiktok_empty_access_token";
             }
 
             User user = null;
@@ -257,24 +272,151 @@ public class TikTokOAuthService {
                         return a;
                     });
 
-            account.setChannelName(channelName);
-            account.setAvatarUrl(avatarUrl);
             account.setAccessToken(accessToken);
-            if (refreshToken != null && !refreshToken.isBlank()) {
+            if (!refreshToken.isBlank()) {
                 account.setRefreshToken(refreshToken);
             }
             account.setTokenExpiresAt(Instant.now().plusSeconds(expiresIn));
             account.setStatus(AccountStatus.CONNECTED);
-            account.setFollowersCount(followersCount);
-            account.setAccountType("BUSINESS");
+            account.setAccountType("CREATOR");
+
+            populateUserProfile(account, accessToken);
 
             socialAccountRepository.save(account);
-            log.info("Successfully linked TikTok account '{}' to user {}", channelName, user.getEmail());
+            log.info("Successfully linked TikTok account '{}' to user {}", account.getChannelName(), user.getEmail());
 
             return frontendRedirect + "?connected=TIKTOK";
         } catch (Exception e) {
             log.error("Error processing TikTok OAuth callback", e);
             return frontendRedirect + "?error=tiktok_callback_exception";
         }
+    }
+
+    private void populateUserProfile(SocialAccount account, String accessToken) {
+        String channelName = account.getChannelName() != null && !account.getChannelName().isBlank()
+                ? account.getChannelName()
+                : "@tiktok_creator";
+        String avatarUrl = account.getAvatarUrl() != null ? account.getAvatarUrl() : "";
+        long followersCount = account.getFollowersCount() != null ? account.getFollowersCount() : 0L;
+        long likesCount = account.getViewsCount() != null ? account.getViewsCount() : 0L;
+        long videoCount = account.getVideosCount() != null ? account.getVideosCount() : 0L;
+
+        try {
+            HttpRequest statsReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,follower_count,likes_count,video_count"))
+                    .header("Authorization", "Bearer " + accessToken)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> statsRes = httpClient.send(statsReq, HttpResponse.BodyHandlers.ofString());
+            boolean parsed = false;
+
+            if (statsRes.statusCode() == 200) {
+                JsonNode userJson = objectMapper.readTree(statsRes.body());
+                JsonNode userData = userJson.path("data").path("user");
+                if (userData.isObject() && !userData.isEmpty()) {
+                    String displayName = userData.path("display_name").asText("").trim();
+                    if (!displayName.isBlank()) {
+                        channelName = displayName.startsWith("@") ? displayName : "@" + displayName;
+                    }
+                    avatarUrl = userData.path("avatar_url").asText(avatarUrl);
+                    followersCount = userData.path("follower_count").asLong(followersCount);
+                    likesCount = userData.path("likes_count").asLong(likesCount);
+                    videoCount = userData.path("video_count").asLong(videoCount);
+                    parsed = true;
+                }
+            }
+
+            if (!parsed) {
+                HttpRequest basicReq = HttpRequest.newBuilder()
+                        .uri(URI.create("https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name"))
+                        .header("Authorization", "Bearer " + accessToken)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> basicRes = httpClient.send(basicReq, HttpResponse.BodyHandlers.ofString());
+                if (basicRes.statusCode() == 200) {
+                    JsonNode userJson = objectMapper.readTree(basicRes.body());
+                    JsonNode userData = userJson.path("data").path("user");
+                    if (userData.isObject() && !userData.isEmpty()) {
+                        String displayName = userData.path("display_name").asText("").trim();
+                        if (!displayName.isBlank()) {
+                            channelName = displayName.startsWith("@") ? displayName : "@" + displayName;
+                        }
+                        avatarUrl = userData.path("avatar_url").asText(avatarUrl);
+                    }
+                } else {
+                    log.warn("Could not query TikTok basic user profile: {}", basicRes.body());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error fetching TikTok user profile: {}", e.getMessage());
+        }
+
+        account.setChannelName(channelName);
+        account.setAvatarUrl(avatarUrl);
+        account.setFollowersCount(followersCount);
+        account.setViewsCount(likesCount);
+        account.setVideosCount(videoCount);
+    }
+
+    @Transactional
+    public SocialAccount syncAccountStatistics(SocialAccount account) {
+        if (account == null || account.getPlatform() != Platform.TIKTOK) {
+            return account;
+        }
+        String token = account.getAccessToken();
+        if (token == null || token.isBlank() || token.startsWith("demo_")) {
+            return account;
+        }
+        if (account.getTokenExpiresAt() != null && account.getTokenExpiresAt().isBefore(Instant.now().plusSeconds(60))) {
+            token = refreshAccessToken(account);
+        }
+        populateUserProfile(account, token);
+        account.setStatus(AccountStatus.CONNECTED);
+        return socialAccountRepository.save(account);
+    }
+
+    @Transactional
+    public String refreshAccessToken(SocialAccount account) {
+        if (account == null || account.getRefreshToken() == null || account.getRefreshToken().isBlank()
+                || account.getRefreshToken().startsWith("demo_")) {
+            return account != null ? account.getAccessToken() : "";
+        }
+        try {
+            String requestBody = "client_key=" + URLEncoder.encode(clientKey, StandardCharsets.UTF_8) +
+                    "&client_secret=" + URLEncoder.encode(clientSecret, StandardCharsets.UTF_8) +
+                    "&grant_type=refresh_token" +
+                    "&refresh_token=" + URLEncoder.encode(account.getRefreshToken(), StandardCharsets.UTF_8);
+
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://open.tiktokapis.com/v2/oauth/token/"))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() == 200) {
+                JsonNode json = objectMapper.readTree(res.body());
+                JsonNode dataNode = json.has("data") && json.get("data").isObject() ? json.get("data") : json;
+                String newAccess = dataNode.path("access_token").asText("");
+                String newRefresh = dataNode.path("refresh_token").asText("");
+                long expiresIn = dataNode.path("expires_in").asLong(86400);
+                if (!newAccess.isBlank()) {
+                    account.setAccessToken(newAccess);
+                    if (!newRefresh.isBlank()) {
+                        account.setRefreshToken(newRefresh);
+                    }
+                    account.setTokenExpiresAt(Instant.now().plusSeconds(expiresIn));
+                    account.setStatus(AccountStatus.CONNECTED);
+                    socialAccountRepository.save(account);
+                    return newAccess;
+                }
+            }
+            log.warn("Could not refresh TikTok token: {}", res.body());
+        } catch (Exception e) {
+            log.warn("Error refreshing TikTok token: {}", e.getMessage());
+        }
+        return account.getAccessToken();
     }
 }

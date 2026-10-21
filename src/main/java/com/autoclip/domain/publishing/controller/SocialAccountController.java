@@ -64,6 +64,10 @@ public class SocialAccountController {
                             && (account.getViewsCount() == null || account.getVideosCount() == null)) {
                         return youTubeOAuthService.syncChannelStatistics(account);
                     }
+                    if (account.getPlatform() == Platform.TIKTOK
+                            && (account.getViewsCount() == null || account.getVideosCount() == null)) {
+                        return tikTokOAuthService.syncAccountStatistics(account);
+                    }
                     return account;
                 })
                 .map(SocialAccountResponse::fromEntity)
@@ -174,24 +178,48 @@ public class SocialAccountController {
 
     @GetMapping("/oauth2/callback/youtube")
     public org.springframework.web.servlet.view.RedirectView handleYouTubeCallback(
-            @RequestParam String code,
-            @RequestParam(required = false) String state) {
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String error,
+            @RequestParam(name = "error_description", required = false) String errorDescription) {
+        if (error != null && !error.isBlank()) {
+            String msg = (errorDescription != null && !errorDescription.isBlank()) ? errorDescription : error;
+            return new org.springframework.web.servlet.view.RedirectView(
+                    "https://autoflow-app-phi.vercel.app/settings/accounts?error="
+                            + java.net.URLEncoder.encode(msg, java.nio.charset.StandardCharsets.UTF_8));
+        }
         String redirectUrl = youTubeOAuthService.handleCallback(code, state);
         return new org.springframework.web.servlet.view.RedirectView(redirectUrl);
     }
 
     @GetMapping("/oauth2/callback/tiktok")
     public org.springframework.web.servlet.view.RedirectView handleTikTokCallback(
-            @RequestParam String code,
-            @RequestParam(required = false) String state) {
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String error,
+            @RequestParam(name = "error_description", required = false) String errorDescription) {
+        if (error != null && !error.isBlank()) {
+            String msg = (errorDescription != null && !errorDescription.isBlank()) ? errorDescription : error;
+            return new org.springframework.web.servlet.view.RedirectView(
+                    tikTokOAuthService.getFrontendRedirect() + "?error="
+                            + java.net.URLEncoder.encode(msg, java.nio.charset.StandardCharsets.UTF_8));
+        }
         String redirectUrl = tikTokOAuthService.handleCallback(code, state);
         return new org.springframework.web.servlet.view.RedirectView(redirectUrl);
     }
 
     @GetMapping("/oauth2/callback/facebook")
     public org.springframework.web.servlet.view.RedirectView handleFacebookCallback(
-            @RequestParam String code,
-            @RequestParam(required = false) String state) {
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String error,
+            @RequestParam(name = "error_description", required = false) String errorDescription) {
+        if (error != null && !error.isBlank()) {
+            String msg = (errorDescription != null && !errorDescription.isBlank()) ? errorDescription : error;
+            return new org.springframework.web.servlet.view.RedirectView(
+                    "https://autoflow-app-phi.vercel.app/settings/accounts?error="
+                            + java.net.URLEncoder.encode(msg, java.nio.charset.StandardCharsets.UTF_8));
+        }
         String redirectUrl = facebookOAuthService.handleCallback(code, state);
         return new org.springframework.web.servlet.view.RedirectView(redirectUrl);
     }
@@ -213,11 +241,26 @@ public class SocialAccountController {
             return ResponseEntity.ok(SocialAccountResponse.fromEntity(synced));
         }
 
+        if (account.getPlatform() == Platform.TIKTOK) {
+            SocialAccount synced = tikTokOAuthService.syncAccountStatistics(account);
+            return ResponseEntity.ok(SocialAccountResponse.fromEntity(synced));
+        }
+
         account.setStatus(AccountStatus.CONNECTED);
         account.setTokenExpiresAt(Instant.now().plusSeconds(60 * 86400));
         SocialAccount saved = accountRepository.save(account);
 
         return ResponseEntity.ok(SocialAccountResponse.fromEntity(saved));
+    }
+
+    @GetMapping("/config/status")
+    public ResponseEntity<Map<String, Object>> getCredentialsStatus() {
+        return ResponseEntity.ok(Map.of(
+                "YOUTUBE_SHORTS", youTubeOAuthService.hasCredentials(),
+                "TIKTOK", tikTokOAuthService.hasCredentials(),
+                "FACEBOOK", facebookOAuthService.hasCredentials(),
+                "tiktokRedirectUri", tikTokOAuthService.getRedirectUri()
+        ));
     }
 
     @PostMapping("/config/credentials")
