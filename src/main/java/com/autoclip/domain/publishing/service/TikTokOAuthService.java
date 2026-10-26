@@ -44,7 +44,7 @@ public class TikTokOAuthService {
     @Value("${clipflow.oauth.tiktok.redirect-uri:http://localhost:8090/api/accounts/oauth2/callback/tiktok}")
     private String redirectUri;
 
-    @Value("${clipflow.oauth.tiktok.scope:user.info.basic,video.publish,video.upload}")
+    @Value("${clipflow.oauth.tiktok.scope:user.info.basic,video.publish}")
     private String scope;
 
     @Value("${clipflow.oauth.tiktok.frontend-redirect:https://autoflow-app-phi.vercel.app/settings/accounts}")
@@ -76,10 +76,21 @@ public class TikTokOAuthService {
         loadSavedCredentials();
     }
 
-    public synchronized void setCredentials(String newKey, String newSecret) {
+    public synchronized void setCredentials(String newKey, String newSecret, String newScope) {
         this.clientKey = (newKey != null) ? newKey.trim() : "";
         this.clientSecret = (newSecret != null) ? newSecret.trim() : "";
+        if (newScope != null && !newScope.isBlank()) {
+            this.scope = newScope.trim();
+        }
         saveCredentialsToFile();
+    }
+
+    public synchronized void setCredentials(String newKey, String newSecret) {
+        setCredentials(newKey, newSecret, null);
+    }
+
+    public String getScope() {
+        return (this.scope != null && !this.scope.isBlank()) ? this.scope : "user.info.basic,video.publish";
     }
 
     public boolean hasCredentials() {
@@ -114,6 +125,9 @@ public class TikTokOAuthService {
                 if (tiktok.has("clientSecret") && (this.clientSecret == null || this.clientSecret.isBlank())) {
                     this.clientSecret = tiktok.get("clientSecret").asText();
                 }
+                if (tiktok.has("scope") && !tiktok.get("scope").asText("").isBlank()) {
+                    this.scope = tiktok.get("scope").asText();
+                }
                 log.info("Loaded persisted TikTok OAuth credentials from storage/oauth_credentials.json (configured: {})", hasCredentials());
             }
         } catch (Exception e) {
@@ -138,6 +152,7 @@ public class TikTokOAuthService {
             Map<String, String> tiktokMap = new java.util.HashMap<>();
             tiktokMap.put("clientKey", this.clientKey != null ? this.clientKey : "");
             tiktokMap.put("clientSecret", this.clientSecret != null ? this.clientSecret : "");
+            tiktokMap.put("scope", this.scope != null && !this.scope.isBlank() ? this.scope : "user.info.basic,video.publish");
             map.put("tiktok", tiktokMap);
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), map);
             log.info("Persisted TikTok OAuth credentials to storage/oauth_credentials.json");
@@ -183,18 +198,22 @@ public class TikTokOAuthService {
     }
 
     public String buildAuthorizationUrl(UUID userId) {
+        return buildAuthorizationUrl(userId, null);
+    }
+
+    public String buildAuthorizationUrl(UUID userId, String overrideScope) {
         if (!hasCredentials()) {
             log.warn("TIKTOK_CLIENT_KEY is not configured.");
             return frontendRedirect + "?error=missing_credentials_tiktok";
         }
 
-        String requestedScope = (scope != null && !scope.isBlank())
-                ? scope.trim()
-                : "user.info.basic,video.publish,video.upload";
+        String targetScope = (overrideScope != null && !overrideScope.isBlank())
+                ? overrideScope.trim()
+                : ((scope != null && !scope.isBlank()) ? scope.trim() : "user.info.basic,video.publish");
 
         return "https://www.tiktok.com/v2/auth/authorize/?" +
                 "client_key=" + URLEncoder.encode(clientKey, StandardCharsets.UTF_8) +
-                "&scope=" + URLEncoder.encode(requestedScope, StandardCharsets.UTF_8) +
+                "&scope=" + URLEncoder.encode(targetScope, StandardCharsets.UTF_8) +
                 "&response_type=code" +
                 "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8) +
                 "&state=" + (userId != null ? userId.toString() : "demo");

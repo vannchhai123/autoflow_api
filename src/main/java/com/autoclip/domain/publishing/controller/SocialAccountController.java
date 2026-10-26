@@ -155,6 +155,7 @@ public class SocialAccountController {
     @PostMapping("/connect/{platform}")
     public ResponseEntity<Map<String, String>> initiateConnect(
             @PathVariable Platform platform,
+            @RequestParam(required = false) String scope,
             @AuthenticationPrincipal User user) {
         User target = resolveUser(user);
         UUID userId = target != null ? target.getId() : null;
@@ -164,7 +165,7 @@ public class SocialAccountController {
             return ResponseEntity.ok(Map.of("authorizationUrl", authUrl));
         }
         if (platform == Platform.TIKTOK) {
-            String authUrl = tikTokOAuthService.buildAuthorizationUrl(userId);
+            String authUrl = tikTokOAuthService.buildAuthorizationUrl(userId, scope);
             return ResponseEntity.ok(Map.of("authorizationUrl", authUrl));
         }
         if (platform == Platform.FACEBOOK) {
@@ -259,7 +260,8 @@ public class SocialAccountController {
                 "YOUTUBE_SHORTS", youTubeOAuthService.hasCredentials(),
                 "TIKTOK", tikTokOAuthService.hasCredentials(),
                 "FACEBOOK", facebookOAuthService.hasCredentials(),
-                "tiktokRedirectUri", tikTokOAuthService.getRedirectUri()
+                "tiktokRedirectUri", tikTokOAuthService.getRedirectUri(),
+                "tiktokScope", tikTokOAuthService.getScope()
         ));
     }
 
@@ -284,11 +286,13 @@ public class SocialAccountController {
         }
 
         if ("TIKTOK".equalsIgnoreCase(platform)) {
-            tikTokOAuthService.setCredentials(clientId, clientSecret);
+            String scope = body.get("scope");
+            tikTokOAuthService.setCredentials(clientId, clientSecret, scope);
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "platform", "TIKTOK",
-                    "configured", tikTokOAuthService.hasCredentials()
+                    "configured", tikTokOAuthService.hasCredentials(),
+                    "scope", tikTokOAuthService.getScope()
             ));
         }
 
