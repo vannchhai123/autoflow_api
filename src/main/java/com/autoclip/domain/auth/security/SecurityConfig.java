@@ -35,7 +35,6 @@ public class SecurityConfig {
             "/health",
             "/api/health",
             "/*.txt",
-            "/**/*.txt",
             "/api/auth/**",
             "/api/accounts/**",
             "/api/posts/**",
